@@ -2,7 +2,8 @@
 
 A translator for UTF-8 characters to HTML coding.
 
-```Syntax: txt2html file.txt [file2.txt [file3.txt...]]
+```
+Syntax: txt2html file.txt [file2.txt [file3.txt...]]
    or   txt2html *.txt
 ```
 
