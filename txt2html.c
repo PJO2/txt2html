@@ -102,14 +102,14 @@ struct S_map tmap[] = {
 };
 
 // compare two S_map entries based on the utf8 value
-static int sort_by_utf8 (const void *a, const void *b)
+static int cmp_by_utf8 (const void *a, const void *b)
 {
 wchar_t a8 = ((struct S_map *) a)->utf8,
         b8 = ((struct S_map *) b)->utf8;
    return (a8>b8) - (a8<b8); 
 } // sort_by_utf8
 
-
+// dipslay the conversion table
 static int DisplayTMap (void)
 {
 int ark;
@@ -172,7 +172,7 @@ int linenb;      // a line counter for reporting
       if (utf8char=='\n') linenb++;   // just for display
       // scan the table tmap using a binary search (not as fast as a hash but simpler)
       const struct S_map pattern = { utf8char, "", 0 }; // the structure to be found;
-      const struct S_map *pmap = bsearch (&pattern, tmap, SizeOfTab(tmap), sizeof pattern, sort_by_utf8);
+      const struct S_map *pmap = bsearch (&pattern, tmap, SizeOfTab(tmap), sizeof pattern, cmp_by_utf8);
       if (pmap==NULL) // not found =# simply write the utf8 char back
       {
          if ((int) utf8char > 255) 
@@ -204,32 +204,34 @@ int linenb;      // a line counter for reporting
    return Ok;
 } // Process
 
-
+// ---------------------------------------
 // main : loop on files given as arguments
+// ---------------------------------------
 int main (int argc, char *argv[])
 {
 int firstarg=1;
+int Ok=TRUE;
 
-   // parse some arguments (verbose or quiet mode)
+   // parse some arguments (debug, verbose or quiet mode)
    for (firstarg=1 ;
         firstarg<argc && argv[firstarg][0]=='-' ;
         firstarg++)
    {
       switch ( argv[firstarg][1] )    // can be \0 but exists anyway
       {
-         case 'd' :  verbose=DEBUG;  break;
-         case 'v' :  verbose=NOTICE; break;
-         case 'q' :  verbose=ERROR;  break;
+         case 'd' :  verbose=DEBUG;  break; // display each conversion
+         case 'v' :  verbose=NOTICE; break; // display untranslated utf8 char 
+         case 'q' :  verbose=ERROR;  break; // do not display file names
       }
    }
    if (argc-firstarg<1) { printf ("Usage: %s [-dqv] file1.txt [file2.txt ...]\n", argv[0]);  exit(1); }
 
    // ensure tmap is sorted
-   qsort (tmap, SizeOfTab(tmap), sizeof(struct S_map), sort_by_utf8);
+   qsort (tmap, SizeOfTab(tmap), sizeof(struct S_map), cmp_by_utf8);
    if (verbose==DEBUG)
       DisplayTMap ();
 
    for (int ark=firstarg; ark<argc ; ark++)
-      Process (argv[ark]);
-return 0;
+      Ok &= Process (argv[ark]);
+return Ok ? 0 : 1;
 } // main
