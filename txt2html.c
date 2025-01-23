@@ -8,13 +8,21 @@
 #include <wchar.h>
 #include <locale.h>
 
+// some usefull shortcuts
+#define SizeOfTab(x) ( sizeof(x) / sizeof(x[0]) )
+#define bool int
+enum { FALSE=0, TRUE };
+enum { EMERGENCY, ALERT, CRITICAL, ERROR, WARNING, NOTICE, INFORMATIONAL, DEBUG};
 
+int verbose=WARNING;
+
+// utf8 character table with their html equivalent
+// utf8 type is wchar_t (defined in stddef)
 struct S_map {
    wchar_t   utf8;
    char     *html;
    int       len;
 };
-
 
 const struct S_map smap[] = {
    { L'"', "&quot;", 6 },
@@ -23,16 +31,16 @@ const struct S_map smap[] = {
    { L'’', "'",        1 },
    { L'à', "&agrave;", 8 },
    { L'á', "&aacute;", 8 },
-   { L'â', "&acirc;", 7 },
+   { L'â', "&acirc;",  7 },
    { L'ã', "&atilde;", 8 },
-   { L'ä', "&auml;", 6 },
-   { L'å', "&aring;", 7 },
-   { L'æ', "&aelig;", 7 },
+   { L'ä', "&auml;",   6 },
+   { L'å', "&aring;",  7 },
+   { L'æ', "&aelig;",  7 },
    { L'ç', "&ccedil;", 8 },
    { L'è', "&egrave;", 8 },
    { L'é', "&eacute;", 8 },
-   { L'ê', "&ecirc;", 7 },
-   { L'ë', "&euml;", 6 },
+   { L'ê', "&ecirc;",  7 },
+   { L'ë', "&euml;",   6 },
    { L'ì', "&igrave;", 8 },
    { L'í', "&iacute;", 8 },
    { L'î', "&icirc;",  7 },
@@ -88,16 +96,14 @@ const struct S_map smap[] = {
 };
 
 
-
+// input file should be a .txt file
+// output file is .html
 const char TEXT_EXT[] = ".txt";
 const char HTML_EXT[] = ".html";
+
+
+// Error checking macro
 #define FAIL(x)  { fprintf (stderr, "error processing file %s: %s\n", infile, x); goto free; }
-
-
-#define SizeOfTab(x) ( sizeof(x) / sizeof(x[0]) )
-#define bool int
-enum { FALSE=0, TRUE };
-
 
 // Process a single file
 int Process (const char *infile)
@@ -108,12 +114,13 @@ char *outfile=NULL;
 FILE *in=NULL, *out=NULL;
 int   utf8char;  // we read char by char
 bool Ok=FALSE;
+int linenb;
 
    // check that file terminates with ".txt"
    // search for extension
    ext = strrchr (infile, '.');
-   if ( ext==NULL  ||
-        strcmp (ext, TEXT_EXT) != 0 )
+   if ( ext==NULL 
+     || strcmp (ext, TEXT_EXT) != 0 )
             FAIL("filename does not terminate with .txt: skipping");
    // outfile is infile with the ext .txt changed to .html
    if ( (outfile = malloc ( ext - infile + strlen(HTML_EXT) + 1)) == NULL ) 
@@ -121,45 +128,72 @@ bool Ok=FALSE;
    memcpy (outfile, infile, ext - infile);
    strcpy (&outfile[ext - infile], HTML_EXT);
 
+   // open both files
    if ( (in = fopen (infile, "rt")) == NULL )
             FAIL ("can not open for reading");
    if ( (out = fopen (outfile, "wt")) == NULL )
             FAIL ("can not open for writing");
+
+   linenb=1; // start at line #1 !
+   // read a single utf8 character (either 8 or 16 bits) 
    while ( (utf8char = fgetwc(in)) != WEOF )
    {
-   int ark;      
+   int ark;     
+      if (utf8char=='\n') linenb++;
+      // scan the table smap
       for ( ark=0; 
             ark<SizeOfTab(smap) && smap[ark].utf8!=utf8char ; 
             ark++ ) ;
-      if (ark==SizeOfTab(smap))  // not found
+      if (ark==SizeOfTab(smap))  // not found =# simply write the utf8 char back
       {
-         if ((int) utf8char > 255) printf ("warning: special char %c/%04X not translated\n", utf8char, utf8char);
+         if ((int) utf8char > 255) 
+            if (verbose>=NOTICE) printf ("warning: special char %c(%04X) not translated\n", utf8char, utf8char);
          Ok = ( fputc (utf8char, out) != EOF );
       }
-      else   
+      else   // found, write the html equivalent
       {
-         // printf ("replacing %04X by idx %d (%c -> %s)\n", utf8char, ark, utf8char, smap[ark].html); 
+         if (verbose==DEBUG)
+             printf ("line #%3d: replacing %04X by idx %d (%c -> %s)\n", 
+                      linenb, utf8char, ark, utf8char, smap[ark].html); 
          Ok = ( fwrite (smap[ark].html, smap[ark].len, 1, out) == 1 );
       }
       if (! Ok) 
                   FAIL("write error");
-   } // process char by char
+   } // read next character
    
+   // free resources
    free:
    if (out!=NULL)  fclose (out);
    if (in!=NULL)   fclose (in);
    if (outfile!=NULL)  free (outfile);
-   if (Ok) printf ("%s\n", infile);
+   if (Ok && verbose>=WARNING)
+        printf ("%s: %d line%c\n", 
+                 infile, linenb, linenb>1 ? 's' : ' ');
+      
    return Ok;
 } // Process
 
 
-
+// main : loop on files given as arguments
 int main (int argc, char *argv[])
 {
-   if (argc<2) { printf ("Usage: %s file1.txt [file2.txt ...]\n", argv[0]);  exit(1); }
+int firstarg=1;
 
-   for (int ark=1; ark<argc ; ark++)
+   // parse some arguments (verbose or quiet mode)
+   for (firstarg=1 ;
+        firstarg<argc && argv[firstarg][0]=='-' ;
+        firstarg++)
+   {
+      switch ( argv[firstarg][1] )    // can be \0 but exists anyway
+      {
+         case 'd' :  verbose=DEBUG;  break;
+         case 'v' :  verbose=NOTICE; break;
+         case 'q' :  verbose=ERROR;  break;
+      }
+   }
+   if (argc-firstarg<1) { printf ("Usage: %s [-dqv] file1.txt [file2.txt ...]\n", argv[0]);  exit(1); }
+
+   for (int ark=firstarg; ark<argc ; ark++)
       Process (argv[ark]);
 return 0;
 } // main
