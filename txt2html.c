@@ -16,15 +16,21 @@ enum { EMERGENCY, ALERT, CRITICAL, ERROR, WARNING, NOTICE, INFORMATIONAL, DEBUG}
 
 int verbose=WARNING;
 
+
+// ---------------------
+// Data Structure and Management
+// ---------------------
+
 // utf8 character table with their html equivalent
 // utf8 type is wchar_t (defined in stddef)
 struct S_map {
-   wchar_t   utf8;
-   char     *html;
-   int       len;
+   wchar_t   utf8;    // the utf8 text character
+   char     *html;    // the html plain ascii string to substitute by
+   int       len;     // its length (in bytes)
 };
 
-const struct S_map smap[] = {
+// the data table, will be sorted in the main function
+struct S_map tmap[] = {
    { L'"', "&quot;", 6 },
   // { L'<', "&lt;",   4 },
   // { L'>', "&gt;",   4 },
@@ -95,12 +101,35 @@ const struct S_map smap[] = {
    { L'ß', "&szlig;",  7 }
 };
 
+// compare two S_map entries based on the utf8 value
+static int sort_by_utf8 (const void *a, const void *b)
+{
+wchar_t a8 = ((struct S_map *) a)->utf8,
+        b8 = ((struct S_map *) b)->utf8;
+   return (a8>b8) - (a8<b8); 
+} // sort_by_utf8
+
+
+static int DisplayTMap (void)
+{
+int ark;
+   printf ("----------\n");
+   for (ark=0 ;  ark<SizeOfTab(tmap) ; ark++)
+      printf ("utf8 char %04X (%c) will be replaced by %s\n", 
+            tmap[ark].utf8, tmap[ark].utf8, tmap[ark].html);
+   printf ("----------\n");
+   return ark;
+} // DisplayTMap
+
+
+// ---------------------
+// Process a single file
+// ---------------------
 
 // input file should be a .txt file
 // output file is .html
 const char TEXT_EXT[] = ".txt";
 const char HTML_EXT[] = ".html";
-
 
 // Error checking macro
 #define FAIL(x)  { fprintf (stderr, "error processing file %s: %s\n", infile, x); goto free; }
@@ -108,13 +137,13 @@ const char HTML_EXT[] = ".html";
 // Process a single file
 int Process (const char *infile)
 {
-char *locale = setlocale(LC_ALL, "");
-const char *ext;
-char *outfile=NULL;
+char *locale = setlocale(LC_ALL, "");  // accepts all utf8 char
+const char *ext;                       // points on extension in infile string
+char *outfile=NULL;                    // outfile name (ends with .html)
 FILE *in=NULL, *out=NULL;
-int   utf8char;  // we read char by char
-bool Ok=FALSE;
-int linenb;
+int   utf8char;  // the utf8 character we have read
+bool Ok=FALSE;   // set to TRUE if current file correctly processed
+int linenb;      // a line counter for reporting
 
    // check that file terminates with ".txt"
    // search for extension
@@ -122,6 +151,7 @@ int linenb;
    if ( ext==NULL 
      || strcmp (ext, TEXT_EXT) != 0 )
             FAIL("filename does not terminate with .txt: skipping");
+
    // outfile is infile with the ext .txt changed to .html
    if ( (outfile = malloc ( ext - infile + strlen(HTML_EXT) + 1)) == NULL ) 
             FAIL("can not allocate memory");
@@ -139,23 +169,24 @@ int linenb;
    while ( (utf8char = fgetwc(in)) != WEOF )
    {
    int ark;     
-      if (utf8char=='\n') linenb++;
-      // scan the table smap
-      for ( ark=0; 
-            ark<SizeOfTab(smap) && smap[ark].utf8!=utf8char ; 
-            ark++ ) ;
-      if (ark==SizeOfTab(smap))  // not found =# simply write the utf8 char back
+      if (utf8char=='\n') linenb++;   // just for display
+      // scan the table tmap using a binary search (not as fast as a hash but simpler)
+      const struct S_map pattern = { utf8char, "", 0 }; // the structure to be found;
+      const struct S_map *pmap = bsearch (&pattern, tmap, SizeOfTab(tmap), sizeof pattern, sort_by_utf8);
+      if (pmap==NULL) // not found =# simply write the utf8 char back
       {
          if ((int) utf8char > 255) 
-            if (verbose>=NOTICE) printf ("warning: special char %c(%04X) not translated\n", utf8char, utf8char);
+            if (verbose>=NOTICE) 
+               printf ("warning: file %s, special char %c(%04X) not translated\n", 
+                        infile, utf8char, utf8char);
          Ok = ( fputc (utf8char, out) != EOF );
       }
       else   // found, write the html equivalent
       {
          if (verbose==DEBUG)
-             printf ("line #%3d: replacing %04X by idx %d (%c -> %s)\n", 
-                      linenb, utf8char, ark, utf8char, smap[ark].html); 
-         Ok = ( fwrite (smap[ark].html, smap[ark].len, 1, out) == 1 );
+             printf ("file %s, line #%3d: replacing utf8 char %04X (%c) by %s)\n", 
+                      infile, linenb, utf8char, utf8char, pmap->html); 
+         Ok = ( fwrite (pmap->html, pmap->len, 1, out) == 1 );
       }
       if (! Ok) 
                   FAIL("write error");
@@ -192,6 +223,11 @@ int firstarg=1;
       }
    }
    if (argc-firstarg<1) { printf ("Usage: %s [-dqv] file1.txt [file2.txt ...]\n", argv[0]);  exit(1); }
+
+   // ensure tmap is sorted
+   qsort (tmap, SizeOfTab(tmap), sizeof(struct S_map), sort_by_utf8);
+   if (verbose==DEBUG)
+      DisplayTMap ();
 
    for (int ark=firstarg; ark<argc ; ark++)
       Process (argv[ark]);
