@@ -18,4 +18,18 @@ Note the '<' and '>' characters are not converted to &amp;lt; and &amp;gt; to al
 
 For each .txt file processed, txt2html creates a corresponding .html file.
 
+The .txt to .html translation can be automated thanks to inotifywait (part of the inotify-tools packages) using :
+```
+find . -name "*.txt" | 
+  xargs inotifywait -r -m -e modify | 
+     while read file_path file_event file_name 
+         do ~/C/txt2html/txt2html ${file_path}${file_name}
+    done
+```
+
+
+
+
+
+
 
